@@ -1,0 +1,720 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Trabalho para Trabalho para a matéria Containerization Strategy.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: nubankapi-demo
+    Description: "Nome do ambiente"
+  PrivateDNSNamespaceName:
+    Type: String
+    Default: service
+    Description: "The private DNS name that identifies the name that you want to use to locate your resources"
+  MinContainersProducts:
+    Type: Number
+    Default: 3
+    Description: "Numero minimo de tasks do ECS"
+  MaxContainersProducts:
+    Type: Number
+    Default: 30
+    Description: "Numero maximo de tasks do ECS"
+  AutoScalingTargetValueProducts:
+    Type: Number
+    Default: 50
+    Description: "CPU para scale-up"
+  MinContainersTaxes:
+    Type: Number
+    Default: 3
+    Description: "Numero minimo de tasks do ECS"
+  MaxContainersTaxes:
+    Type: Number
+    Default: 30
+    Description: "Numero maximo de tasks do ECS"
+  AutoScalingTargetValueTaxes:
+    Type: Number
+    Default: 50
+    Description: "CPU para scale-up"
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Generic"
+        Parameters: 
+          - EnvironmentName
+          - PrivateDNSNamespaceName
+      - 
+        Label: 
+          default: "Products Service"
+        Parameters: 
+          - MinContainersProducts
+          - MaxContainersProducts
+          - AutoScalingTargetValueProducts
+      - 
+        Label: 
+          default: "Taxes Service"
+        Parameters: 
+          - MinContainersTaxes
+          - MaxContainersTaxes
+          - AutoScalingTargetValueTaxes
+
+Mappings:
+  SubnetConfig:
+    VPC:
+      CIDR: '10.0.0.0/16'
+    PublicOne:
+      CIDR: '10.0.0.0/24'
+    PublicTwo:
+      CIDR: '10.0.1.0/24'
+    PublicThree:
+      CIDR: '10.0.2.0/24'
+    PrivateOne:
+      CIDR: '10.0.100.0/24'
+    PrivateTwo:
+      CIDR: '10.0.101.0/24'
+    PrivateThree:
+      CIDR: '10.0.102.0/24'
+
+Resources:
+
+  DynamoDBTableProducts:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: productId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: productId
+          KeyType: HASH
+
+  DynamoDBTableTaxes:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: taxId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: taxId
+          KeyType: HASH
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !FindInMap ['SubnetConfig', 'VPC', 'CIDR']
+
+  PublicSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PublicOne', 'CIDR']
+      MapPublicIpOnLaunch: true
+  PublicSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PublicTwo', 'CIDR']
+      MapPublicIpOnLaunch: true
+  PublicSubnetThree:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 2
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PublicThree', 'CIDR']
+      MapPublicIpOnLaunch: true
+
+  PrivateSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PrivateOne', 'CIDR']
+  PrivateSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PrivateTwo', 'CIDR']
+  PrivateSubnetThree:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 2
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PrivateThree', 'CIDR']
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachement:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachement
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+  PublicSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetOne
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetTwo
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetThreeRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetThree
+      RouteTableId: !Ref PublicRouteTable
+
+  NatGatewayOneAttachment:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachement
+    Properties:
+        Domain: vpc
+  NatGatewayTwoAttachment:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachement
+    Properties:
+        Domain: vpc
+  NatGatewayThreeAttachment:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachement
+    Properties:
+        Domain: vpc
+  NatGatewayOne:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayOneAttachment.AllocationId
+      SubnetId: !Ref PublicSubnetOne
+  NatGatewayTwo:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayTwoAttachment.AllocationId
+      SubnetId: !Ref PublicSubnetTwo
+  NatGatewayThree:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayThreeAttachment.AllocationId
+      SubnetId: !Ref PublicSubnetThree
+  PrivateRouteTableOne:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PrivateRouteOne:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableOne
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayOne
+  PrivateRouteTableOneAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableOne
+      SubnetId: !Ref PrivateSubnetOne
+  PrivateRouteTableTwo:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PrivateRouteTwo:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableTwo
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayTwo
+  PrivateRouteTableTwoAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableTwo
+      SubnetId: !Ref PrivateSubnetTwo
+  PrivateRouteTableThree:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PrivateRouteThree:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableThree
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayThree
+  PrivateRouteTableThreeAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableThree
+      SubnetId: !Ref PrivateSubnetThree
+
+  DynamoDBEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: "*"
+            Principal: "*"
+            Resource: "*"
+      RouteTableIds:
+        - !Ref 'PrivateRouteTableOne'
+        - !Ref 'PrivateRouteTableTwo'
+        - !Ref 'PrivateRouteTableThree'
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcId: !Ref 'VPC'
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the Fargate containers
+      VpcId: !Ref 'VPC'
+
+  ContainerSecurityGroupSelfIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ContainerSecurityGroup
+      SourceSecurityGroupId: !Ref ContainerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole'
+
+  ECSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ecs.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: ecs-service
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+              - 'ec2:AttachNetworkInterface'
+              - 'ec2:CreateNetworkInterface'
+              - 'ec2:CreateNetworkInterfacePermission'
+              - 'ec2:DeleteNetworkInterface'
+              - 'ec2:DeleteNetworkInterfacePermission'
+              - 'ec2:Describe*'
+              - 'ec2:DetachNetworkInterface'
+
+              - 'elasticloadbalancing:DeregisterInstancesFromLoadBalancer'
+              - 'elasticloadbalancing:DeregisterTargets'
+              - 'elasticloadbalancing:Describe*'
+              - 'elasticloadbalancing:RegisterInstancesWithLoadBalancer'
+              - 'elasticloadbalancing:RegisterTargets'
+            Resource: '*'
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ecs-tasks.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: AmazonECSTaskExecutionRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                # Allow the ECS Tasks to download images from ECR
+                - 'ecr:GetAuthorizationToken'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+
+                # Allow the ECS tasks to upload logs to CloudWatch
+                - 'logs:CreateLogStream'
+                - 'logs:PutLogEvents'
+              Resource: '*'
+
+  PrivateDNSNamespace:
+    Type: 'AWS::ServiceDiscovery::PrivateDnsNamespace'
+    Properties:
+      Vpc: !Ref VPC
+      Name: !Ref PrivateDNSNamespaceName
+
+  ServiceDiscoveryServiceProducts:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      DnsConfig:
+        DnsRecords:
+          - Type: SRV
+            TTL: 60
+        NamespaceId: !Ref PrivateDNSNamespace
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: 'nubank.products'
+
+  ServiceDiscoveryServiceTaxes:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      DnsConfig:
+        DnsRecords:
+          - Type: SRV
+            TTL: 60
+        NamespaceId: !Ref PrivateDNSNamespace
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: 'nubank.taxes'
+
+  TaskRoleProducts:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+      - PolicyName: dynamodb-table-access
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:BatchGet*
+            - dynamodb:DescribeStream
+            - dynamodb:DescribeTable
+            - dynamodb:Get*
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:BatchWrite*
+            - dynamodb:CreateTable
+            - dynamodb:Delete*
+            - dynamodb:Update*
+            - dynamodb:PutItem
+            Resource: !GetAtt DynamoDBTableProducts.Arn
+
+  TaskRoleTaxes:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+      - PolicyName: dynamodb-table-access
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:BatchGet*
+            - dynamodb:DescribeStream
+            - dynamodb:DescribeTable
+            - dynamodb:Get*
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:BatchWrite*
+            - dynamodb:CreateTable
+            - dynamodb:Delete*
+            - dynamodb:Update*
+            - dynamodb:PutItem
+            Resource: !GetAtt DynamoDBTableTaxes.Arn
+
+  TaskDefinitionProducts:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      TaskRoleArn: !GetAtt TaskRoleProducts.Arn
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+          - Name: 'Products'
+            Image: 'simonepomata/nubank-demo-products:latest'
+            Essential: true
+            PortMappings:
+              - ContainerPort: 8080
+                Protocol: tcp
+            Environment:
+              - Name: DynamoDBTable
+                Value: !Ref DynamoDBTableProducts
+      NetworkMode: awsvpc
+      Memory: '512'
+      Cpu: '256'
+
+  TaskDefinitionTaxes:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      TaskRoleArn: !GetAtt TaskRoleTaxes.Arn
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+          - Name: 'Taxes'
+            Image: 'simonepomata/nubank-demo-taxes:latest'
+            Essential: true
+            PortMappings:
+              - ContainerPort: 8080
+                Protocol: tcp
+            Environment:
+              - Name: DynamoDBTable
+                Value: !Ref DynamoDBTableTaxes
+      NetworkMode: awsvpc
+      Memory: '512'
+      Cpu: '256'
+
+  ServiceProducts: 
+    Type: AWS::ECS::Service
+    DependsOn:
+      - PrivateRouteOne
+      - PrivateRouteTwo
+      - PrivateRouteThree
+    Properties: 
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinitionProducts
+      LaunchType: FARGATE
+      DesiredCount: 3
+      ServiceRegistries:
+        - RegistryArn: !GetAtt ServiceDiscoveryServiceProducts.Arn
+          Port: 8080
+      NetworkConfiguration:
+          AwsvpcConfiguration:
+            AssignPublicIp: DISABLED
+            Subnets:
+              - !Ref PrivateSubnetOne
+              - !Ref PrivateSubnetTwo
+              - !Ref PrivateSubnetThree
+            SecurityGroups:
+              - !Ref ContainerSecurityGroup
+
+  ServiceTaxes: 
+    Type: AWS::ECS::Service
+    DependsOn:
+      - PrivateRouteOne
+      - PrivateRouteTwo
+      - PrivateRouteThree
+    Properties: 
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinitionTaxes
+      LaunchType: FARGATE
+      DesiredCount: 3
+      ServiceRegistries:
+        - RegistryArn: !GetAtt ServiceDiscoveryServiceTaxes.Arn
+          Port: 8080
+      NetworkConfiguration:
+          AwsvpcConfiguration:
+            AssignPublicIp: DISABLED
+            Subnets:
+              - !Ref PrivateSubnetOne
+              - !Ref PrivateSubnetTwo
+              - !Ref PrivateSubnetThree
+            SecurityGroups:
+              - !Ref ContainerSecurityGroup
+
+  AutoScalingTargetProducts:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: !Ref MinContainersProducts
+      MaxCapacity: !Ref MaxContainersProducts
+      ResourceId: !Join ['/', [service, !Ref ECSCluster, !GetAtt ServiceProducts.Name]]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  AutoScalingTargetTaxes:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: !Ref MinContainersTaxes
+      MaxCapacity: !Ref MaxContainersTaxes
+      ResourceId: !Join ['/', [service, !Ref ECSCluster, !GetAtt ServiceTaxes.Name]]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  AutoScalingPolicyProducts:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Join ['', [!GetAtt ServiceProducts.Name, '-AutoScalingPolicy']]
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScalingTargetProducts
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: !Ref AutoScalingTargetValueProducts
+
+  AutoScalingPolicyTaxes:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Join ['', [!GetAtt ServiceTaxes.Name, '-AutoScalingPolicy']]
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScalingTargetTaxes
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: !Ref AutoScalingTargetValueTaxes
+
+  HttpApiVPCLink:
+    Type: AWS::ApiGatewayV2::VpcLink
+    Properties: 
+      Name: !Ref EnvironmentName
+      SecurityGroupIds: 
+        - !Ref ContainerSecurityGroup
+      SubnetIds: 
+        - !Ref PrivateSubnetOne
+        - !Ref PrivateSubnetTwo
+        - !Ref PrivateSubnetThree
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+  
+  UserPoolClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      SupportedIdentityProviders:
+        - COGNITO
+      PreventUserExistenceErrors: ENABLED
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Body:
+        openapi: "3.0.1"
+        info:
+          title: !Ref EnvironmentName
+        components:
+          securitySchemes:
+            my-authorizer:
+              type: oauth2
+              flows: {}
+              x-amazon-apigateway-authorizer:
+                identitySource: "$request.header.Authorization"
+                jwtConfiguration:
+                  audience:
+                  - !Ref 'UserPoolClient'
+                  issuer: !GetAtt 'UserPool.ProviderURL'
+                type: jwt
+        paths:
+          /products/{productId}:
+            get:
+              responses:
+                default:
+                  description: "Default response for GET /products/{productId}"
+              x-amazon-apigateway-integration:
+                payloadFormatVersion: "1.0"
+                connectionId: !Ref HttpApiVPCLink
+                type: "http_proxy"
+                httpMethod: "ANY"
+                uri: !GetAtt ServiceDiscoveryServiceProducts.Arn
+                connectionType: "VPC_LINK"
+            put:
+              responses:
+                default:
+                  description: "Default response for PUT /products/{productId}"
+              security:
+              - my-authorizer: []
+              x-amazon-apigateway-integration:
+                payloadFormatVersion: "1.0"
+                connectionId: !Ref HttpApiVPCLink
+                type: "http_proxy"
+                httpMethod: "ANY"
+                uri: !GetAtt ServiceDiscoveryServiceProducts.Arn
+                connectionType: "VPC_LINK"
+          /taxes/{taxId}:
+            get:
+              responses:
+                default:
+                  description: "Default response for GET /taxes/{taxId}"
+              x-amazon-apigateway-integration:
+                payloadFormatVersion: "1.0"
+                connectionId: !Ref HttpApiVPCLink
+                type: "http_proxy"
+                httpMethod: "ANY"
+                uri: !GetAtt ServiceDiscoveryServiceTaxes.Arn
+                connectionType: "VPC_LINK"
+            put:
+              responses:
+                default:
+                  description: "Default response for PUT /taxes/{taxId}"
+              security:
+              - my-authorizer: []
+              x-amazon-apigateway-integration:
+                payloadFormatVersion: "1.0"
+                connectionId: !Ref HttpApiVPCLink
+                type: "http_proxy"
+                httpMethod: "ANY"
+                uri: !GetAtt ServiceDiscoveryServiceTaxes.Arn
+                connectionType: "VPC_LINK"
+        x-amazon-apigateway-cors:
+          # This is a Test client web app that invokes the API, used in the blog post, for demostration purposes only.
+          # In production, make sure that you do NOT allow any untrusted origin.
+          allowOrigins:
+            - 'https://master.d34am23lsz3nvz.amplifyapp.com'
+          allowHeaders:
+            - '*'
+          allowMethods:
+            - 'PUT'
+            - 'GET'
+        x-amazon-apigateway-importexport-version: "1.0"
+
+  HttpApiStage:
+    Type: 'AWS::ApiGatewayV2::Stage'
+    Properties:
+      StageName: '$default'
+      ApiId: !Ref 'HttpApi'
+      AutoDeploy: true
+
+Outputs:
+  APIInvokeURL:
+    Description: URL da API
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+  APIInvokeURLProduct:
+    Description: URL para o servico Product
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/products/{productId}'
+  APIInvokeURLTaxes:
+    Description: URL para o servico Taxes
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/taxes/{taxId}'

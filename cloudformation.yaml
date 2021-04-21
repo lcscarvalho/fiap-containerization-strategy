@@ -690,8 +690,6 @@ Resources:
                 uri: !GetAtt ServiceDiscoveryServiceTaxes.Arn
                 connectionType: "VPC_LINK"
         x-amazon-apigateway-cors:
-          # This is a Test client web app that invokes the API, used in the blog post, for demostration purposes only.
-          # In production, make sure that you do NOT allow any untrusted origin.
           allowOrigins:
             - 'https://master.d34am23lsz3nvz.amplifyapp.com'
           allowHeaders:

@@ -469,7 +469,7 @@ Resources:
         - FARGATE
       ContainerDefinitions:
           - Name: 'Products'
-            Image: 'simonepomata/nubank-demo-products:latest'
+            Image: 'lcscarvalho/nubank-demo-products:latest'
             Essential: true
             PortMappings:
               - ContainerPort: 8080
@@ -489,7 +489,7 @@ Resources:
         - FARGATE
       ContainerDefinitions:
           - Name: 'Taxes'
-            Image: 'simonepomata/nubank-demo-taxes:latest'
+            Image: 'lcscarvalho/nubank-demo-taxes:latest'
             Essential: true
             PortMappings:
               - ContainerPort: 8080
